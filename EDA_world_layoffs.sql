@@ -1,121 +1,215 @@
--- Exploratory Data Analysis
+-- =====================================================
+-- Project: SQL Exploratory Data Analysis
+-- Dataset: Global Tech Layoffs
+-- Clean Table: layoffs_staging_2
+-- Author: Hanif S
+-- =====================================================
 
-SELECT * FROM layoffs_stagging_2;
+-- NOTE:
+-- This analysis uses the cleaned dataset created in the
+-- "SQL Data Cleaning Project".
+-- The cleaned table used here is: layoffs_staging_2
 
--- Max layoff on a single day
-SELECT MAX(total_laid_off), MAX(percentage_laid_off)
-FROM layoffs_stagging_2;
 
--- 100% employees layoff by company with funds raised in millions
+-- =====================================================
+-- 1. DATASET OVERVIEW
+-- =====================================================
+
+-- View first rows of the dataset
 SELECT *
-FROM layoffs_stagging_2
+FROM layoffs_staging_2
+LIMIT 10;
+
+-- Dataset date range
+SELECT MIN(date) AS earliest_date,
+       MAX(date) AS latest_date
+FROM layoffs_staging_2;
+
+
+-- =====================================================
+-- 2. MAJOR LAYOFF EVENTS
+-- =====================================================
+
+-- Maximum layoffs recorded in a single entry
+SELECT MAX(total_laid_off) AS max_laid_off,
+       MAX(percentage_laid_off) AS max_percentage_laid_off
+FROM layoffs_staging_2;
+
+-- Companies that laid off 100% of employees
+-- Sorted by funding raised
+SELECT company,
+       location,
+       industry,
+       total_laid_off,
+       percentage_laid_off,
+       funds_raised_millions
+FROM layoffs_staging_2
 WHERE percentage_laid_off = 1
 AND funds_raised_millions IS NOT NULL
 ORDER BY funds_raised_millions DESC;
 
--- Layoffs by company. Gives a good insight on leading and know companies in layoff
-SELECT company, SUM(total_laid_off)
-FROM layoffs_stagging_2
+
+-- =====================================================
+-- 3. LAYOFFS BY COMPANY
+-- =====================================================
+
+-- Companies with the highest total layoffs
+SELECT company,
+       SUM(total_laid_off) AS total_layoffs
+FROM layoffs_staging_2
 GROUP BY company
-ORDER BY 2 DESC;
+ORDER BY total_layoffs DESC;
 
--- Layoffs by dates. This shows when layoffs are seen in the dataset.
-SELECT MIN(`date`), MAX(`date`) 
-FROM layoffs_stagging_2;
 
--- Layoffs by industry. Clearly, consumer and retail were hit badly
-SELECT industry, SUM(total_laid_off)
-FROM layoffs_stagging_2
+-- =====================================================
+-- 4. LAYOFFS BY INDUSTRY
+-- =====================================================
+
+SELECT industry,
+       SUM(total_laid_off) AS total_layoffs
+FROM layoffs_staging_2
 GROUP BY industry
-ORDER BY 2 DESC;
+ORDER BY total_layoffs DESC;
 
--- Layoff by country
-SELECT country, SUM(total_laid_off)
-FROM layoffs_stagging_2
+
+-- =====================================================
+-- 5. LAYOFFS BY COUNTRY
+-- =====================================================
+
+SELECT country,
+       SUM(total_laid_off) AS total_layoffs
+FROM layoffs_staging_2
 GROUP BY country
-ORDER BY 2 DESC;
+ORDER BY total_layoffs DESC;
 
--- Layoff by year. Interesting to know layoffs began in 2022, 2023 was the worst where it peaked
-SELECT YEAR(`date`), SUM(total_laid_off)
-FROM layoffs_stagging_2
-GROUP BY YEAR(`date`)
-ORDER BY 2 DESC;
 
--- Layoff by stage
-SELECT stage, SUM(total_laid_off)
-FROM layoffs_stagging_2
+-- =====================================================
+-- 6. YEARLY LAYOFF TRENDS
+-- =====================================================
+
+SELECT YEAR(date) AS year,
+       SUM(total_laid_off) AS total_layoffs
+FROM layoffs_staging_2
+GROUP BY YEAR(date)
+ORDER BY year;
+
+
+-- =====================================================
+-- 7. LAYOFFS BY COMPANY STAGE
+-- =====================================================
+
+SELECT stage,
+       SUM(total_laid_off) AS total_layoffs
+FROM layoffs_staging_2
 GROUP BY stage
-ORDER BY 2 DESC;
+ORDER BY total_layoffs DESC;
 
--- Layoffs by percentage of employee in company. This can help compare historical data
-SELECT company, ROUND(SUM(percentage_laid_off),2) `%_laid_off`
-FROM layoffs_stagging_2
+
+-- =====================================================
+-- 8. PERCENTAGE OF WORKFORCE LAID OFF BY COMPANY
+-- =====================================================
+
+SELECT company,
+       ROUND(SUM(percentage_laid_off), 2) AS percentage_laid_off
+FROM layoffs_staging_2
 GROUP BY company
-ORDER BY 2 DESC;
+ORDER BY percentage_laid_off DESC;
 
--- Layoffs by Year/Month and total layoffs. Timeline of layoffs by months
-SELECT DATE_FORMAT(date, '%Y/%m') AS `Month`, SUM(total_laid_off) AS total_off
-FROM layoffs_stagging_2
+
+-- =====================================================
+-- 9. MONTHLY LAYOFF TIMELINE
+-- =====================================================
+
+SELECT DATE_FORMAT(date, '%Y/%m') AS month,
+       SUM(total_laid_off) AS total_layoffs
+FROM layoffs_staging_2
 WHERE DATE_FORMAT(date, '%Y/%m') IS NOT NULL
-GROUP BY `Month`
-ORDER BY `Month`;
+GROUP BY month
+ORDER BY month;
 
 
--- Layoffs totals, rolling totals, rolling percentage and progression in percentage
-WITH cte_total_off AS 
+-- =====================================================
+-- 10. ROLLING LAYOFF ANALYSIS
+-- =====================================================
+
+WITH monthly_layoffs AS
 (
-    SELECT DATE_FORMAT(date, '%Y/%m') AS `Month`, SUM(total_laid_off) AS total_off
-    FROM layoffs_stagging_2
-    WHERE DATE_FORMAT(date, '%Y/%m') IS NOT NULL
-    GROUP BY `Month`
-    ORDER BY `Month`
+    SELECT DATE_FORMAT(date, '%Y/%m') AS month,
+           SUM(total_laid_off) AS total_layoffs
+    FROM layoffs_staging_2
+    GROUP BY month
 ),
-cte_rolling_percentage AS
+rolling_totals AS
 (
-    SELECT `Month`, total_off,
-    SUM(total_off) OVER(ORDER BY `Month`) AS rolling_off,
-    SUM(total_off) OVER(ORDER BY `Month`) * 100 / SUM(total_off) OVER() AS rolling_percentage
-    FROM cte_total_off
+    SELECT month,
+           total_layoffs,
+           SUM(total_layoffs) OVER(ORDER BY month) AS rolling_layoffs,
+           SUM(total_layoffs) OVER(ORDER BY month) * 100 /
+           SUM(total_layoffs) OVER() AS rolling_percentage
+    FROM monthly_layoffs
 ),
-cte_with_difference AS
+rolling_change AS
 (
-    SELECT `Month`, total_off, rolling_off, ROUND(rolling_percentage, 2) AS rolling_percentage,
-    ROUND(rolling_percentage - LAG(rolling_percentage, 1, 0) OVER(ORDER BY `Month`), 2) AS percentage_diff
-    FROM cte_rolling_percentage
+    SELECT month,
+           total_layoffs,
+           rolling_layoffs,
+           ROUND(rolling_percentage, 2) AS rolling_percentage,
+           ROUND(
+                rolling_percentage -
+                LAG(rolling_percentage, 1, 0) OVER(ORDER BY month),
+                2
+           ) AS percentage_change
+    FROM rolling_totals
 )
-SELECT `Month`, total_off, rolling_off, rolling_percentage, percentage_diff
-FROM cte_with_difference
-ORDER BY `Month`;
 
-
--- Layoffs by company and year
-
-SELECT company, YEAR(`date`) AS 'year', SUM(total_laid_off)
-FROM layoffs_stagging_2
-GROUP BY company, 'year'
-ORDER BY 3 DESC;
-
--- Layoffs by company, year with higher count. Amzaon for instance had more layoffs in '22 than '23
-WITH cte_company_by_year (company, years, total_laid_off) AS
-(
-SELECT company, YEAR(`date`), SUM(total_laid_off)
-FROM layoffs_stagging_2
-GROUP BY company, YEAR(`date`)
-),
-company_rank_year AS
-(
-SELECT *,
-DENSE_RANK() OVER(PARTITION BY years ORDER BY total_laid_off DESC) AS rnk
-FROM cte_company_by_year
-WHERE years IS NOT NULL
-)
 SELECT *
-FROM company_rank_year
-WHERE rnk <= 5;
+FROM rolling_change
+ORDER BY month;
 
 
--- Very Hard question with substrings
+-- =====================================================
+-- 11. LAYOFFS BY COMPANY AND YEAR
+-- =====================================================
 
+SELECT company,
+       YEAR(date) AS year,
+       SUM(total_laid_off) AS total_layoffs
+FROM layoffs_staging_2
+GROUP BY company, YEAR(date)
+ORDER BY total_layoffs DESC;
+
+
+-- =====================================================
+-- 12. TOP COMPANIES BY LAYOFFS EACH YEAR
+-- =====================================================
+
+WITH company_yearly_layoffs AS
+(
+    SELECT company,layoffs_staging_2
+           YEAR(date) AS year,
+           SUM(total_laid_off) AS total_layoffs
+    FROM layoffs_staging_2
+    GROUP BY company, YEAR(date)
+),
+ranked_companies AS
+(
+    SELECT *,
+           DENSE_RANK() OVER(
+               PARTITION BY year
+               ORDER BY total_layoffs DESC
+           ) AS rank_
+    FROM company_yearly_layoffs
+)
+
+SELECT *
+FROM ranked_companies
+WHERE rank_ <= 5;
+
+
+-- =====================================================
+-- BONUS: SQL STRING MANIPULATION EXERCISE
+-- Parsing Address Data
+-- =====================================================
 
 CREATE TABLE ADDRESSES (
     address VARCHAR(250)
@@ -130,23 +224,29 @@ INSERT INTO ADDRESSES (address) VALUES
 
 SELECT * FROM ADDRESSES;
 
-SELECT CASE
-	WHEN address LIKE '% Suite 5A%' THEN SUBSTRING_INDEX(address, ' Suite 5A', 1)
-    WHEN address LIKE '% Unit%' THEN SUBSTRING_INDEX(address, ' Unit', 1)
-	ELSE SUBSTRING_INDEX(address, '-', 1)
-    END AS street,
-    SUBSTRING_INDEX(SUBSTRING_INDEX(address, '-',2),'-', -1) AS city,
-    SUBSTRING_INDEX(address, ' ', -1) AS postal_code
+SELECT
+CASE
+    WHEN address LIKE '% Suite 5A%'
+        THEN SUBSTRING_INDEX(address, ' Suite 5A', 1)
+    WHEN address LIKE '% Unit%'
+        THEN SUBSTRING_INDEX(address, ' Unit', 1)
+    ELSE SUBSTRING_INDEX(address, '-', 1)
+END AS street,
+
+SUBSTRING_INDEX(SUBSTRING_INDEX(address, '-',2),'-', -1) AS city,
+
+SUBSTRING_INDEX(address, ' ', -1) AS postal_code
+
 FROM ADDRESSES;
 
 
-SELECT * FROM ADDRESSES;
+-- =====================================================
+-- ANALYSIS SUMMARY
+-- =====================================================
 
-SELECT CASE
-	WHEN address LIKE '% Suite 5A%' THEN SUBSTRING_INDEX(address, ' Suite 5A', 1)
-    WHEN address LIKE '% Unit%' THEN SUBSTRING_INDEX(address, ' Unit', 1)
-	ELSE SUBSTRING_INDEX(address, '-', 1)
-    END AS street,
-	SUBSTRING_INDEX(SUBSTRING_INDEX(address, '-',2),'-', -1) AS city,
-    SUBSTRING_INDEX(address, ' ', -1) AS postal_code
-FROM ADDRESSES;
+-- Key Insights:
+-- 1. Layoffs increased significantly during 2022 and 2023.
+-- 2. Technology and consumer industries were among the most affected.
+-- 3. The United States experienced the highest number of layoffs.
+-- 4. Several startups laid off 100% of their workforce, indicating closures.
+-- 5. Monthly rolling analysis shows spikes during economic downturn periods.
